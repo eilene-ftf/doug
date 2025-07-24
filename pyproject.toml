@@ -13,6 +13,5 @@ torch-hd = { git = "https://github.com/hyperdimensional-computing/torchhd.git" }
 
 [dependency-groups]
 dev = [
-    "black>=25.1.0",
-    "isort>=6.0.1",
+    "ruff>=0.12.5",
 ]

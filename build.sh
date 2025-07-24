@@ -1,2 +1,1 @@
-./.venv/bin/black -l79 .
-./.venv/bin/isort .
+./.venv/bin/ruff format --line-length 79
