@@ -1,0 +1,18 @@
+[project]
+name = "vsa-llfpl"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "torch-hd",
+]
+
+[tool.uv.sources]
+torch-hd = { git = "https://github.com/hyperdimensional-computing/torchhd.git" }
+
+[dependency-groups]
+dev = [
+    "black>=25.1.0",
+    "isort>=6.0.1",
+]

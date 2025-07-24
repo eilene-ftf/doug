@@ -1,0 +1,9 @@
+# value definitions
+
+let foo : Bool(1) = {
+    if True(1) then {
+        True(1)
+    } else {
+        False(1)
+    }
+};
