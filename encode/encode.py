@@ -288,6 +288,7 @@ class EncodingEnvironment:
                     + kind.bind(self.codebook["#:kind"])
                     + _type.bind(self.codebook["#:type"])
                 )
+                # this is a test
 
             # Tuple type destructor
             # Returns
