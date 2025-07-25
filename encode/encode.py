@@ -72,7 +72,7 @@ class EncodingEnvironment:
         """Initialize the codebook of the encoding environment."""
         symbols = [
             symbol
-            for symbol in torchhd.random(len(KEYWORDS), self.dim, vsa="FHRR")
+            for symbol in torchhd.random(len(KEYWORDS), self.dim, vsa=self.vsa)
         ]
         for key, symbol in zip(KEYWORDS, symbols):
             self.codebook[key] = symbol
@@ -96,8 +96,15 @@ class EncodingEnvironment:
             "#:to",
         ]
         structural_perms = [torch.randperm(self.dim) for _ in structural_items]
-        for item, symbol in zip(structural_items, structural_perms):
-            self.perms[item] = symbol
+        structural_symbols = [
+            symbol
+            for symbol in torchhd.random(
+                len(structural_items), self.dim, vsa=self.vsa
+            )
+        ]
+        for item, perm, symbol in zip(structural_items, structural_perms, structural_symbols):
+            self.codebook[item] = symbol
+            self.perms[item] = perm
 
     # TODO: There's a smarter way to do this that involves some algebraic identity
     #       It's in the HDM paper
@@ -210,28 +217,24 @@ class EncodingEnvironment:
         match constant:
             # Boolean constants
             # Returns
-            # (#:kind * "true") + (#:level * <level>)
+            # "true" + (#:level * <level>)
             case LLTrue(level):
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["true"]
 
-                return encoded_level.bind(
-                    self.codebook["#:level"]
-                ) + kind.bind(self.codebook["#:kind"])
+                return self.codebook["true"] +
+                encoded_level.bind(self.codebook["#:level"])
 
             # Returns
-            # (#:kind * "false") + (#:level * <level>)
+            # "false" + (#:level * <level>)
             case LLFalse(level):
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["false"]
 
-                return encoded_level.bind(
-                    self.codebook["#:level"]
-                ) + kind.bind(self.codebook["#:kind"])
+                return self.codebook["false"] +
+                encoded_level.bind(self.codebook["#:level"])
 
             # Boolean destructor
             # Returns
-            # (#:kind * "case-bool") + (#:level * "level")
+            # "case-bool" + (#:level * "level")
             case LLCaseBool(type_arg, level):
                 _type = self.encode_type(type_arg)
                 encoded_level = self.encode_level(level)
@@ -240,12 +243,12 @@ class EncodingEnvironment:
                 return (
                     _type.bind(self.codebook["#:type"])
                     + encoded_level.bind(self.codebook["#:level"])
-                    + kind.bind(self.codebook["#:kind"])
+                    + kind
                 )
 
             # List destructor
             # Returns
-            # (#:kind * "case-list") + (#:type * ( (#:from * <type_arg0>) + (#:to * <type_arg1>) )) + (#:level * <level>)
+            # "case-list" + (#:type * ( (#:from * <type_arg0>) + (#:to * <type_arg1>) )) + (#:level * <level>)
             case LLCaseList(type_arg0, type_arg1, level):
                 encoded_level = self.encode_level(level)
                 from_ = self.encode_type(type_arg0)
@@ -256,50 +259,50 @@ class EncodingEnvironment:
                 )
 
                 return (
-                    kind.bind(self.codebook["#:kind"])
+                    kind
                     + encoded_level.bind(self.codebook["#:level"])
                     + _type.bind(self.codebook["#:type"])
                 )
 
             # List constructor
             # Returns
-            # (#:kind * "cons") + (#:level * <level>) + (#:type * <type>)
+            # "cons" + (#:level * <level>) + (#:type * <type>)
             case LLCons(type_arg, level):
                 encoded_level = self.encode_level(level)
                 _type = self.encode_type(type_arg)
                 kind = self.codebook["cons"]
                 return (
-                    kind.bind(self.codebook["#:kind"])
+                    kind
                     + _type.bind(self.codebook["#:type"])
                     + encoded_level.bind(self.codebook[":level"])
                 )
 
             # Empty list constructor
             # Returns
-            # (#kind * "nil") + (#:level * <level>) + (#:type * <type>)
+            # "nil" + (#:level * <level>) + (#:type * <type>)
             case LLNil(type_arg, level):
                 encoded_level = self.encode_level(level)
                 _type = self.encode_type(type_arg)
                 kind = self.codebook["nil"]
                 return (
-                    kind.bind(self.codebook["#:kind"])
+                    kind
                     + _type.bind(self.codebook["#:type"])
                     + encoded_level.bind(self.codebook[":level"])
                 )
 
             # Chit type constructor
             # Returns
-            # (#:kind * "dollar") + (#:level * <level>)
+            # "dollar" + (#:level * <level>)
             case LLDollar(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["dollar"]
-                return kind.bind(self.codebook["#:kind"]) + encoded_level.bind(
+                return kind + encoded_level.bind(
                     self.codebook["#:level"]
                 )
 
             # Affine tuple type constructor
             # Returns
-            # (#:kind * "tuple") +  (#:level * <level>) +
+            # "tuple" +  (#:level * <level>) +
             #   (#:type * ( (#:left * <left>) + (#:right + <right>) ))
             case LLTupleConstr(level, type_arg0, type_arg1):
                 encoded_level = self.encode_level(level)
@@ -311,7 +314,7 @@ class EncodingEnvironment:
                 kind = self.codebook["tuple"]
                 return (
                     encoded_level.bind(self.codebook["#:level"])
-                    + kind.bind(self.codebook["#:kind"])
+                    + kind
                     + _type.bind(self.codebook["#:type"])
                 )
                 # this is a test
@@ -325,7 +328,7 @@ class EncodingEnvironment:
                 kind = self.codebook["pi"]
 
                 return (
-                    kind.bind(self.codebook["#:kind"])
+                    kind
                     + _type.bind(self.codebook["#:type"])
                     + encoded_level.bind(self.codebook["#:level"])
                 )
@@ -347,7 +350,7 @@ class EncodingEnvironment:
             case LLAnn(var, type_ann):
                 if var not in self.codebook:
                     self.codebook[var] = torchhd.random(
-                        1, self.dim, vsa="FHRR"
+                        1, self.dim, vsa=self.vsa
                     )[0]
                 _type = self.encode_type(type_ann)
                 kind = self.codebook[":"]
