@@ -46,6 +46,7 @@ class EncodingEnvironment:
 
         self.codebook: dict[str, torchhd.FHRRTensor] = {}
         self.init_codebook()
+        # TODO: remove and replace with RHC embedding
         self.fractional_embed = torchhd.embeddings.FractionalPower(1, self.dim)
 
     def init_codebook(self) -> None:
@@ -108,6 +109,7 @@ class EncodingEnvironment:
             case LLFunc(rator, rand):
                 rator_encoded = self.encode_type(rator)
                 rand_encoded = self.encode_type(rand)
+                # TODO: add levels
 
                 kind = self.codebook["->"]
                 _type = rator_encoded.bind(
@@ -124,6 +126,7 @@ class EncodingEnvironment:
             case LLTuple(lhs, rhs):
                 lhs_encoded = self.encode_type(lhs)
                 rhs_encoded = self.encode_type(rhs)
+                # TODO: add levels
 
                 kind = self.codebook["*"]
                 _type = lhs_encoded.bind(
@@ -135,7 +138,7 @@ class EncodingEnvironment:
                 )
 
             # List types
-            # (#:kind * "list">) + (#:level * <level>) + (#:type * <type>)
+            # (#:kind * "list") + (#:level * <level>) + (#:type * <type>)
             case LLList(type_arg, level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["list"]
@@ -165,6 +168,7 @@ class EncodingEnvironment:
             # Returns
             # (#:kind * "#") + (#:level * <level>)
             case LLCredit(level):
+                # TODO: change to unicode diamond
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["#"]
 
@@ -315,7 +319,6 @@ class EncodingEnvironment:
         """
         # Match on the form of the term
         match term:
-            
             # Annotated variables
             # Returns
             # (#:kind * ":") + (#:type * <type_ann>) + (#:var * self.codebook[var])
