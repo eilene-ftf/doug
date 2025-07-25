@@ -43,6 +43,25 @@ wheels = [
 ]
 
 [[package]]
+name = "doug"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "torch-hd" },
+]
+
+[package.dev-dependencies]
+dev = [
+    { name = "ruff" },
+]
+
+[package.metadata]
+requires-dist = [{ name = "torch-hd", git = "https://github.com/hanleyc01/torchhd.git" }]
+
+[package.metadata.requires-dev]
+dev = [{ name = "ruff", specifier = ">=0.12.5" }]
+
+[[package]]
 name = "et-xmlfile"
 version = "2.0.0"
 source = { registry = "https://pypi.org/simple" }
@@ -500,7 +519,7 @@ wheels = [
 [[package]]
 name = "torch-hd"
 version = "5.8.4"
-source = { git = "https://github.com/hyperdimensional-computing/torchhd.git#9d73e1bd1f169d718340dfd40aa1aa976faa3851" }
+source = { git = "https://github.com/hanleyc01/torchhd.git#9d73e1bd1f169d718340dfd40aa1aa976faa3851" }
 dependencies = [
     { name = "numpy" },
     { name = "openpyxl" },
@@ -561,22 +580,3 @@ sdist = { url = "https://files.pythonhosted.org/packages/15/22/9ee70a2574a4f4599
 wheels = [
     { url = "https://files.pythonhosted.org/packages/a7/c2/fe1e52489ae3122415c51f387e221dd0773709bad6c6cdaa599e8a2c5185/urllib3-2.5.0-py3-none-any.whl", hash = "sha256:e6b01673c0fa6a13e374b50871808eb3bf7046c4b125b216f6bf1cc604cff0dc", size = 129795 },
 ]
-
-[[package]]
-name = "vsa-llfpl"
-version = "0.1.0"
-source = { virtual = "." }
-dependencies = [
-    { name = "torch-hd" },
-]
-
-[package.dev-dependencies]
-dev = [
-    { name = "ruff" },
-]
-
-[package.metadata]
-requires-dist = [{ name = "torch-hd", git = "https://github.com/hyperdimensional-computing/torchhd.git" }]
-
-[package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.12.5" }]

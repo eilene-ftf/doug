@@ -1,5 +1,5 @@
 [project]
-name = "vsa-llfpl"
+name = "doug"
 version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
@@ -8,10 +8,11 @@ dependencies = [
     "torch-hd",
 ]
 
-[tool.uv.sources]
-torch-hd = { git = "https://github.com/hyperdimensional-computing/torchhd.git" }
 
 [dependency-groups]
 dev = [
     "ruff>=0.12.5",
 ]
+
+[tool.uv.sources]
+torch-hd = { git = "https://github.com/hanleyc01/torchhd.git" }

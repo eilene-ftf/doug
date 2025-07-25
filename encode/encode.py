@@ -41,6 +41,7 @@ class EncodingEnvironment:
         self.device = device
         self.dim = dim
         self.declarative_memory = struct.Memory()
+        # TODO: add cleanup-memory
         self.cleanup_memory = None
 
         self.codebook: dict[str, torchhd.FHRRTensor] = {}
@@ -56,6 +57,11 @@ class EncodingEnvironment:
         for key, symbol in zip(KEYWORDS, symbols):
             self.codebook[key] = symbol
 
+        # Structural items are vector symbols in the codebook which are used
+        # as roles in role-filler structure pairs in encoding the abstract syntax.
+        # To see where it is used, and the particular fillers for the roles for
+        # each syntactic item, see the encoding functions below.
+        # Each structural item begins with the `#:`.
         structural_items = [
             "#:kind",
             "#:type",
@@ -88,6 +94,7 @@ class EncodingEnvironment:
         # Match on the dataclass
         match type_:
             # Boolean types
+            # Returns (#:level * <level>) + (#:kind * "bool")
             case LLBool(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["bool"]
@@ -97,6 +104,7 @@ class EncodingEnvironment:
                 ) + self.codebook["#:kind"].bind(kind)
 
             # Function types
+            # Returns (#:kind * "->") + (#:type * ((#:dom * <rator>) + (#:codom * <rand>) )))
             case LLFunc(rator, rand):
                 rator_encoded = self.encode_type(rator)
                 rand_encoded = self.encode_type(rand)
@@ -111,6 +119,8 @@ class EncodingEnvironment:
                 )
 
             # Tuple types
+            # Returns
+            # (#:kind * "*") + (#:type * ((#:right * <rhs>) + (#:left * <lhs>))))
             case LLTuple(lhs, rhs):
                 lhs_encoded = self.encode_type(lhs)
                 rhs_encoded = self.encode_type(rhs)
@@ -125,6 +135,7 @@ class EncodingEnvironment:
                 )
 
             # List types
+            # (#:kind * "list">) + (#:level * <level>) + (#:type * <type>)
             case LLList(type_arg, level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["list"]
@@ -137,6 +148,8 @@ class EncodingEnvironment:
                 )
 
             # "Modal" types: marks it as non-affine.
+            # Returns
+            # (#:kind * "!") + (#:level * <level>) + (#:type * <type>)
             case LLModal(type_arg, level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["!"]
@@ -149,6 +162,8 @@ class EncodingEnvironment:
                 )
 
             # Chit type
+            # Returns
+            # (#:kind * "#") + (#:level * <level>)
             case LLCredit(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["#"]
@@ -168,6 +183,8 @@ class EncodingEnvironment:
         """
         match constant:
             # Boolean constants
+            # Returns
+            # (#:kind * "true") + (#:level * <level>)
             case LLTrue(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["true"]
@@ -175,6 +192,9 @@ class EncodingEnvironment:
                 return encoded_level.bind(
                     self.codebook["#:level"]
                 ) + kind.bind(self.codebook["#:kind"])
+
+            # Returns
+            # (#:kind * "false") + (#:level * <level>)
             case LLFalse(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["false"]
@@ -184,6 +204,8 @@ class EncodingEnvironment:
                 ) + kind.bind(self.codebook["#:kind"])
 
             # Boolean destructor
+            # Returns
+            # (#:kind * "case-bool") + (#:level * "level")
             case LLCaseBool(type_arg, level):
                 _type = self.encode_type(type_arg)
                 encoded_level = self.encode_level(level)
@@ -196,6 +218,8 @@ class EncodingEnvironment:
                 )
 
             # List destructor
+            # Returns
+            # (#:kind * "case-list") + (#:type * ( (#:from * <type_arg0>) + (#:to * <type_arg1>) )) + (#:level * <level>)
             case LLCaseList(type_arg0, type_arg1, level):
                 encoded_level = self.encode_level(level)
                 from_ = self.encode_type(type_arg0)
@@ -212,6 +236,8 @@ class EncodingEnvironment:
                 )
 
             # List constructor
+            # Returns
+            # (#:kind * "cons") + (#:level * <level>) + (#:type * <type>)
             case LLCons(type_arg, level):
                 encoded_level = self.encode_level(level)
                 _type = self.encode_type(type_arg)
@@ -223,6 +249,8 @@ class EncodingEnvironment:
                 )
 
             # Empty list constructor
+            # Returns
+            # (#kind * "nil") + (#:level * <level>) + (#:type * <type>)
             case LLNil(type_arg, level):
                 encoded_level = self.encode_level(level)
                 _type = self.encode_type(type_arg)
@@ -234,6 +262,8 @@ class EncodingEnvironment:
                 )
 
             # Chit type constructor
+            # Returns
+            # (#:kind * "dollar") + (#:level * <level>)
             case LLDollar(level):
                 encoded_level = self.encode_level(level)
                 kind = self.codebook["dollar"]
@@ -242,6 +272,9 @@ class EncodingEnvironment:
                 )
 
             # Affine tuple type constructor
+            # Returns
+            # (#:kind * "tuple") +  (#:level * <level>) +
+            #   (#:type * ( (#:left * <left>) + (#:right + <right>) ))
             case LLTupleConstr(level, type_arg0, type_arg1):
                 encoded_level = self.encode_level(level)
                 left = self.encode_type(type_arg0)
@@ -257,6 +290,8 @@ class EncodingEnvironment:
                 )
 
             # Tuple type destructor
+            # Returns
+            # (#:kind * "pi") + (#:level * <level>) + (#:type + <type_arg>)
             case LLProj(level, type_arg):
                 encoded_level = self.encode_level(level)
                 _type = self.encode_type(type_arg)
@@ -277,12 +312,17 @@ class EncodingEnvironment:
         :return: The result of the encoding.
         :rtype: torchhd.VSATensor
         """
+        # Match on the form of the term
         match term:
+            
+            # Annotated variables
+            # Returns
+            # (#:kind * ":") + (#:type * <type_ann>) + (#:var * self.codebook[var])
             case LLAnn(var, type_ann):
-                if var in self.codebook:
-                    raise ValueError(f"ERROR: {var} is a reserved name")
-
-                self.codebook[var] = torchhd.random(1, self.dim, vsa="FHRR")[0]
+                if var not in self.codebook:
+                    self.codebook[var] = torchhd.random(
+                        1, self.dim, vsa="FHRR"
+                    )[0]
                 _type = self.encode_type(type_ann)
                 kind = self.codebook[":"]
                 return (
