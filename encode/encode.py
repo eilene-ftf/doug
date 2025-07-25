@@ -346,7 +346,7 @@ class EncodingEnvironment:
         match term:
             # Annotated variables
             # Returns
-            # (#:kind * ":") + (#:type * <type_ann>) + (#:var * self.codebook[var])
+            # ":" + (#:type * <type_ann>) + (#:var * self.codebook[var])
             case LLAnn(var, type_ann):
                 if var not in self.codebook:
                     self.codebook[var] = torchhd.random(
@@ -355,10 +355,69 @@ class EncodingEnvironment:
                 _type = self.encode_type(type_ann)
                 kind = self.codebook[":"]
                 return (
-                    _type.bind(self.codebook["#:typpe"])
+                    _type.bind(self.codebook["#:type"])
                     + self.codebook[var].bind(self.codebook["#:var"])
-                    + kind.bind(self.codebook["#:kind"])
+                    + kind
                 )
+
+            case LLVar(var):
+                if var not in self.codebook:
+                    self.codebook[var] = torchhd.random(1, self.dim, vsa=self.vsa)[0]
+                kind = self.codebook["val"]
+                return kind + self.codebook[var].bind(self.codebook["#:val"])
+
+            case LLLambda(var, type_ann, body):
+                if var not in self.codebook:
+                    self.codebook[var] = torchhd.random(1, self.dim, vsa=self.vsa)[0]
+                kind = self.codebook["lambda"]
+                _type = self.encode_type(type_ann)
+                _body = self.encode_term(body)
+                
+                return (
+                        kind 
+                        + _type.bind(self.codebook["#:type"])
+                        + var.bind(self.codebook["#:var"])
+                        + _body.bind(self.codebook["#:body"])
+                )
+            
+            case LLApp(rator, rand):
+                kind = self.codebook["app"]
+                _rator = self.encode_term(rator)
+                _rand = self.encode_term(rand)
+
+                return (
+                        kind
+                        + _rator.bind(self.codebook["#:rator"]),
+                        + _rand.bind(self.codebook["#:rand"])
+                )
+            
+            # I think this may be incorrect
+            case LLBox(level, term):
+                pass
+
+            case LLHole(level, term):
+                kind = self.codebook["hole"]
+                encoded_level = self.encode_level(level)
+                _term = self.encode_term(term)
+
+                return (
+                        kind
+                        + encoded_level.bind(self.codebook["#:level"])
+                        + _term.bind(self.codebook["#:term"])
+                )
+
+            # Is this supposed to be brace?
+            case LLHoleFill(var, outer_level, value, body):
+                pass
+
+            # I think this is wrong too
+            case LLSubst(x1, x2, lhs, rhs):
+                pass
+
+            case LLLet(name, ann, body):
+                pass
+
+
             case _:
                 raise TypeError("ERROR; inappropriate argument type")
 

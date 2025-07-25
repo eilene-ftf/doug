@@ -19,4 +19,5 @@ KEYWORDS = [
     "subst",
     "true",
     "tuple",
+    "var",
 ]
