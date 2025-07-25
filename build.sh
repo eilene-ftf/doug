@@ -1,0 +1,1 @@
+./.venv/bin/ruff format --line-length 79
