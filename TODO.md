@@ -6,7 +6,7 @@
 - [ ] Implement lexer
     + [ ] Standardize syntax of `llfpl` source files
 - [ ] Implement parser
-- [ ] HDM Memory for Types & similarity
+- [x] HDM Memory for Types & similarity
 - [ ] Implement encoding
     + [ ] Levels are encoded using Fractional Binding right now, handroll RHC for use with torchhd
 - [ ] Implement decoding

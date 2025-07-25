@@ -202,7 +202,7 @@ class EncodingEnvironment:
             case LLCredit(level):
                 encoded_level = self.encode_level(level)
 
-               return self._chunk({"#:kind": "◇", "#:level": encoded_level})
+                return self._chunk({"#:kind": "◇", "#:level": encoded_level})
 
             case _:
                 raise TypeError("ERROR: innapropriate argument type")
@@ -221,16 +221,20 @@ class EncodingEnvironment:
             case LLTrue(level):
                 encoded_level = self.encode_level(level)
 
-                return self.codebook["true"] +
-                encoded_level.bind(self.codebook["#:level"])
+                return (
+                        self.codebook["true"] +
+                        encoded_level.bind(self.codebook["#:level"])
+                )
 
             # Returns
             # "false" + (#:level * <level>)
             case LLFalse(level):
                 encoded_level = self.encode_level(level)
 
-                return self.codebook["false"] +
-                encoded_level.bind(self.codebook["#:level"])
+                return (
+                        self.codebook["false"] +
+                        encoded_level.bind(self.codebook["#:level"])
+                )
 
             # Boolean destructor
             # Returns
