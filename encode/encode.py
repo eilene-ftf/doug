@@ -5,6 +5,12 @@ import torch
 import torchhd
 import torchhd.structures as struct
 
+from itertools import chain, combinations
+from functools import reduce
+from operator import mul
+from typing import TypeVar
+from collections.abc import Iterable
+
 from language.lexer import KEYWORDS
 from language.syntax import (
     LLBool,
@@ -33,11 +39,23 @@ from language.syntax import (
     LLVar,
 )
 
+T = TypeVar('T')
+
+def powerset(s: Iterable[T]) -> Iterable[tuple[T, ...]]:
+    """Returns the powerset of s, minus the empty set.
+    
+    :param s: An iterable, typically a set or dict.
+    :return: The powerset of s, minus {}.
+    :rtype: Iterable[tuple[T, ...]]
+    """
+    return chain.from_iterable(combinations(s, r) for r in range(1, len(s)+1))
+
 
 class EncodingEnvironment:
     """The encoding environment."""
 
-    def __init__(self, dim: int, device=None) -> None:
+    def __init__(self, dim: int, device=None, vsa="FHRR") -> None:
+        self.vsa = vsa
         self.device = device
         self.dim = dim
         self.declarative_memory = struct.Memory()
@@ -45,11 +63,12 @@ class EncodingEnvironment:
         self.cleanup_memory = None
 
         self.codebook: dict[str, torchhd.FHRRTensor] = {}
-        self.init_codebook()
+        self.perms: dict[str, torch.Tensor] = {}
+        self.init_codebooks()
         # TODO: remove and replace with RHC embedding
         self.fractional_embed = torchhd.embeddings.FractionalPower(1, self.dim)
 
-    def init_codebook(self) -> None:
+    def init_codebooks(self) -> None:
         """Initialize the codebook of the encoding environment."""
         symbols = [
             symbol
@@ -58,7 +77,7 @@ class EncodingEnvironment:
         for key, symbol in zip(KEYWORDS, symbols):
             self.codebook[key] = symbol
 
-        # Structural items are vector symbols in the codebook which are used
+        # Structural items are permutations in the perms codebook which are used
         # as roles in role-filler structure pairs in encoding the abstract syntax.
         # To see where it is used, and the particular fillers for the roles for
         # each syntactic item, see the encoding functions below.
@@ -76,14 +95,43 @@ class EncodingEnvironment:
             "#:var",
             "#:to",
         ]
-        structural_symbols = [
-            symbol
-            for symbol in torchhd.random(
-                len(structural_items), self.dim, vsa="FHRR"
-            )
-        ]
-        for item, symbol in zip(structural_items, structural_symbols):
-            self.codebook[item] = symbol
+        structural_perms = [torch.randperm(self.dim) for _ in structural_items]
+        for item, symbol in zip(structural_items, structural_perms):
+            self.perms[item] = symbol
+
+    # TODO: There's a smarter way to do this that involves some algebraic identity
+    #       It's in the HDM paper
+    def _set_product(self, s: dict[str, str|torchhd.VSATensor]) -> torchhd.VSATensor:
+        """Gets the product of a set of role-filler pairs.
+
+        :param s: Role-filler pairs from a sub-chunk.
+        :return: The product of all fillers, permuted by their roles.
+        :rtype: torchhd.VSATensor
+
+        For a set {k1: v1, k2: v2, ...} returns the product 
+        v1[k1] * v2[k2] * ..., where ki are permutations, and vi are vectors. 
+        Takes the a dict comprised of names of role permutations in self.perms
+        where values may be either codebook names or vectors.
+        """
+        def dependent_bind(acc: torchhd.VSATensor, role: str) -> torchhd.VSATensor:
+            # If filler is a string, retrieve codebook vector
+            if isinstance(s[role], str):
+                s[role] = self.codebook(s[role])
+            # Bind permuted filler with accumulator
+            return acc * s[role][self.perms[role]]
+
+        # Multiply all fillers, permuted by their roles
+        return reduce(dependent_bind, s, torchhd.VSATensor.identity(1, self.dim, self.vsa)[0])
+
+    def _chunk(self, rf: dict[str, str|torchhd.VSATensor]) -> torchhd.VSATensor:
+        """Generates a chunk representation from c by summing the products of
+        sets in the powerset of rf.
+
+        :param rf: Set of role-filler pairs we want to chunk.
+        :return: The sum of products of subsets of the powerset of rf.
+        :rtype: torchhd.VSATensor
+        """
+        return sum(self._set_product(c) for c in powerset(rf))
 
     def encode_type(self, type_: LLType) -> torchhd.VSATensor:
         """Encode an `LLType` into a hypervector.
@@ -95,86 +143,60 @@ class EncodingEnvironment:
         # Match on the dataclass
         match type_:
             # Boolean types
-            # Returns (#:level * <level>) + (#:kind * "bool")
+            # Returns chunk{#:level : <level>, #:kind : "bool"}
             case LLBool(level):
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["bool"]
-
-                return self.codebook["#:level"].bind(
-                    encoded_level
-                ) + self.codebook["#:kind"].bind(kind)
+                
+                return self._chunk({"#:kind": "bool", "#:level": encoded_level})
 
             # Function types
-            # Returns (#:kind * "->") + (#:type * ((#:dom * <rator>) + (#:codom * <rand>) )))
+            # Returns chunk{#:kind : "->" , #:type : chunk{#:dom : <rator>, #:codom : <rand>}}
             case LLFunc(rator, rand):
                 rator_encoded = self.encode_type(rator)
                 rand_encoded = self.encode_type(rand)
                 # TODO: add levels
 
-                kind = self.codebook["->"]
-                _type = rator_encoded.bind(
-                    self.codebook["#:dom"]
-                ) + rand_encoded.bind(self.codebook["#:codom"])
+                _type = self._chunk({"#:dom": rator_encoded, "#:codom": rand_encoded})
 
-                return kind.bind(self.codebook["#:kind"]) + _type.bind(
-                    self.codebook["#:type"]
-                )
+                return self._chunk({"#kind": "->", "#:type": _type})
 
             # Tuple types
             # Returns
-            # (#:kind * "*") + (#:type * ((#:right * <rhs>) + (#:left * <lhs>))))
+            # chunk{#:kind : "*" , #:type : chunk{#:right : <rhs>, #:left : <lhs>}}
             case LLTuple(lhs, rhs):
                 lhs_encoded = self.encode_type(lhs)
                 rhs_encoded = self.encode_type(rhs)
                 # TODO: add levels
 
-                kind = self.codebook["*"]
-                _type = lhs_encoded.bind(
-                    self.codebook["#:left"]
-                ) + rhs_encoded.bind(self.codebook["#:right"])
+                _type = self._chunk({"#:left": lhs_encoded, "#:right": rhs_encoded})
 
-                return kind.bind(self.codebook[":kind"]) + _type.bind(
-                    self.codebook["#:type"]
-                )
+                return self._chunk({"#:kind": "*", "#:type": _type})
 
             # List types
-            # (#:kind * "list") + (#:level * <level>) + (#:type * <type>)
+            # chunk{#:kind : "list", #:level : <level>, #:type : <type>}
             case LLList(type_arg, level):
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["list"]
                 _type = self.encode_type(type_arg)
 
-                return (
-                    encoded_level.bind(self.codebook["#:level"])
-                    + kind.bind(self.codebook["#:kind"])
-                    + _type.bind(self.codebook["#:type"])
-                )
+                return self._chunk({"#:level": encoded_level, "#:kind": "list", "#:type": _type})
 
             # "Modal" types: marks it as non-affine.
             # Returns
-            # (#:kind * "!") + (#:level * <level>) + (#:type * <type>)
+            # chunk{#:kind : "!", #:level : <level>, #:type : <type>}
             case LLModal(type_arg, level):
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["!"]
                 _type = self.encode_type(type_arg)
 
-                return (
-                    encoded_level.bind(self.codebook["#:level"])
-                    + kind.bind(self.codebook["#:kind"])
-                    + _type.bind(self.codebook["#:type"])
-                )
+                return self._chunk({"#:level": encoded_level, "#:kind": "!", "#:type": _type})
 
             # Chit type
             # Returns
-            # (#:kind * "#") + (#:level * <level>)
+            # chunk{#:kind : "◇", #:level : <level>}
             case LLCredit(level):
-                # TODO: change to unicode diamond
                 encoded_level = self.encode_level(level)
-                kind = self.codebook["#"]
 
-                return encoded_level.bind(
-                    self.codebook["#:level"]
-                ) + kind.bind(self.codebook["#:kind"])
+               return self._chunk({"#:kind": "◇", "#:level": encoded_level})
+
             case _:
                 raise TypeError("ERROR: innapropriate argument type")
 
